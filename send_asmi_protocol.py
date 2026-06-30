@@ -8,6 +8,7 @@ from collections.abc import Mapping
 import csv
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -23,6 +24,7 @@ class StationRequestError(RuntimeError):
 def main() -> int:
     args = parse_args()
     base_url = args.asmi_base_url.rstrip("/")
+    protocol_yaml = read_text(args.protocol_yaml)
     session = requests.Session()
 
     if not args.no_health_check:
@@ -36,7 +38,7 @@ def main() -> int:
             "run_id": args.run_id,
             "gantry_config": read_text(args.gantry_config),
             "deck_config": read_text(args.deck_config),
-            "protocol_yaml": read_text(args.protocol_yaml),
+            "protocol_yaml": protocol_yaml,
             "mock_mode": args.mock_mode,
         },
         timeout=args.timeout_s,
@@ -46,7 +48,7 @@ def main() -> int:
             f"ASMI station run {args.run_id!r} failed: {response.get('error') or response!r}"
         )
     if args.output_csv:
-        write_csv(args.output_csv, response, run_id=args.run_id)
+        write_csv(args.output_csv, response, run_id=args.run_id, wells=protocol_wells(protocol_yaml))
         print(f"wrote CSV: {args.output_csv}")
     print(json.dumps(response, indent=2, sort_keys=True))
     return 0
@@ -69,11 +71,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def write_csv(path: Path, response: Mapping[str, Any], *, run_id: str) -> Path:
-    rows = csv_rows(response, run_id=run_id)
+def write_csv(path: Path, response: Mapping[str, Any], *, run_id: str, wells: list[str]) -> Path:
+    rows = csv_rows(response, run_id=run_id, wells=wells)
     path = path.expanduser().resolve()
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = sorted({key for row in rows for key in row})
+    preferred = [
+        "run_id",
+        "well",
+        "sample_index",
+        "timestamp_s",
+        "z_position_mm",
+        "raw_force_n",
+        "corrected_force_n",
+        "direction",
+    ]
+    extras = sorted({key for row in rows for key in row if key not in preferred})
+    fieldnames = [key for key in preferred if any(key in row for row in rows)] + extras
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -81,8 +94,8 @@ def write_csv(path: Path, response: Mapping[str, Any], *, run_id: str) -> Path:
     return path
 
 
-def csv_rows(response: Mapping[str, Any], *, run_id: str) -> list[dict[str, Any]]:
-    station_payload = extract_station_payload(
+def csv_rows(response: Mapping[str, Any], *, run_id: str, wells: list[str]) -> list[dict[str, Any]]:
+    payloads = station_payloads(
         response,
         preferred_keys=(
             "measurements",
@@ -92,17 +105,14 @@ def csv_rows(response: Mapping[str, Any], *, run_id: str) -> list[dict[str, Any]
             "sample_timestamps",
         ),
     )
-    samples = asmi_samples(station_payload)
-    if samples:
-        return [
-            {
-                "run_id": run_id,
-                "sample_index": index,
-                **sample,
-            }
-            for index, sample in enumerate(samples)
-        ]
-    return [{"run_id": run_id, **flatten(response)}]
+    rows: list[dict[str, Any]] = []
+    for payload_index, payload in enumerate(payloads):
+        well = payload_well(payload) or at(wells, payload_index)
+        for sample_index, sample in enumerate(asmi_samples(payload)):
+            rows.append({"run_id": run_id, "well": well, "sample_index": sample_index, **sample})
+    if rows:
+        return rows
+    return [{"run_id": run_id, "well": ",".join(wells), **flatten(response)}]
 
 
 def asmi_samples(payload: Any) -> list[dict[str, Any]]:
@@ -141,20 +151,37 @@ def asmi_samples(payload: Any) -> list[dict[str, Any]]:
     ]
 
 
-def extract_station_payload(value: Any, *, preferred_keys: tuple[str, ...]) -> Any:
+def station_payloads(value: Any, *, preferred_keys: tuple[str, ...]) -> list[Mapping[str, Any]]:
+    found: list[Mapping[str, Any]] = []
     if isinstance(value, list):
         for item in value:
-            found = extract_station_payload(item, preferred_keys=preferred_keys)
-            if isinstance(found, Mapping) and any(key in found for key in preferred_keys):
-                return found
-        return None
-    if isinstance(value, Mapping):
+            found.extend(station_payloads(item, preferred_keys=preferred_keys))
+    elif isinstance(value, Mapping):
         if any(key in value for key in preferred_keys):
-            return value
-        for child in value.values():
-            found = extract_station_payload(child, preferred_keys=preferred_keys)
-            if isinstance(found, Mapping) and any(key in found for key in preferred_keys):
-                return found
+            found.append(value)
+        else:
+            for child in value.values():
+                found.extend(station_payloads(child, preferred_keys=preferred_keys))
+    return found
+
+
+def protocol_wells(protocol_yaml: str) -> list[str]:
+    return [
+        match.group(1).upper()
+        for match in re.finditer(r"\bposition:\s*plate\.([A-Ha-h][1-9][0-2]?)\b", protocol_yaml)
+    ]
+
+
+def payload_well(payload: Mapping[str, Any]) -> str | None:
+    for key in ("well", "target_well"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value.upper()
+    position = payload.get("position")
+    if isinstance(position, str):
+        match = re.search(r"\bplate\.([A-Ha-h][1-9][0-2]?)\b", position)
+        if match:
+            return match.group(1).upper()
     return None
 
 

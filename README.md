@@ -1,7 +1,6 @@
 # ASMI Protocol Sender
 
-Barebones script for sending the local ASMI protocol YAML directly to the
-station worker.
+Barebones script for sending `protocol.yaml` directly to the ASMI station worker.
 
 ## Run
 
@@ -11,58 +10,48 @@ From the repo root:
 python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001
 ```
 
-This prints the station-worker JSON response and also writes:
+The script prints the station-worker JSON response and writes:
 
 ```text
 asmi_protocol_sender/asmi_result.csv
 ```
 
-Or from this directory:
+## CSV
+
+The CSV is one row per force sample, with a `well` column. Wells are read from
+the `position: plate.<well>` entries in `protocol.yaml` and matched to ASMI
+result payloads in protocol order.
+
+Custom output path:
 
 ```bash
-python send_asmi_protocol.py --run-id asmi-test-001
-```
-
-By default it talks to:
-
-```text
-http://10.210.29.17:8000
+python asmi_protocol_sender/send_asmi_protocol.py \
+  --run-id asmi-test-001 \
+  --output-csv asmi_protocol_sender/asmi-test-001.csv
 ```
 
 ## Files
 
-- `protocol.yaml` is the protocol sent as `protocol_yaml`
+- `protocol.yaml` is sent unchanged as `protocol_yaml`
 - `gantry_config.yaml` is sent as `gantry_config`
 - `deck_config.yaml` is sent as `deck_config`
-- `send_asmi_protocol.py` sends the request
+- `send_asmi_protocol.py` sends the request and writes the CSV
 
-The script reads the YAML files as raw text. It does not parse, render, or
-modify the protocol.
-
-## Useful flags
-
-```bash
-python asmi_protocol_sender/send_asmi_protocol.py \
-  --run-id asmi-a1-test \
-  --asmi-base-url http://10.210.29.17:8000 \
-  --output-csv asmi_protocol_sender/asmi-a1-test.csv
-```
+## Flags
 
 Skip the health check:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-a1-test --no-health-check
+python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001 --no-health-check
 ```
 
-Send mock mode:
+Use mock mode:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-a1-test --mock-mode
+python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001 --mock-mode
 ```
 
 ## Dependency
-
-Requires `requests`:
 
 ```bash
 python -m pip install requests
