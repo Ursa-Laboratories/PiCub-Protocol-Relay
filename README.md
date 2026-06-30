@@ -1,19 +1,19 @@
-# ASMI Protocol Sender
+# PiCub Protocol Sender
 
 Barebones script for sending `protocol.yaml` directly to the ASMI station worker.
 
 ## Run
 
-From the repo root:
+From this directory:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001
+python send_asmi_protocol.py --run-id asmi-test-001
 ```
 
 The script prints the station-worker JSON response and writes:
 
 ```text
-asmi_protocol_sender/asmi_result.csv
+asmi_result.csv
 ```
 
 ## CSV
@@ -25,9 +25,9 @@ result payloads in protocol order.
 Custom output path:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py \
+python send_asmi_protocol.py \
   --run-id asmi-test-001 \
-  --output-csv asmi_protocol_sender/asmi-test-001.csv
+  --output-csv asmi-test-001.csv
 ```
 
 ## Files
@@ -42,13 +42,13 @@ python asmi_protocol_sender/send_asmi_protocol.py \
 Skip the health check:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001 --no-health-check
+python send_asmi_protocol.py --run-id asmi-test-001 --no-health-check
 ```
 
 Use mock mode:
 
 ```bash
-python asmi_protocol_sender/send_asmi_protocol.py --run-id asmi-test-001 --mock-mode
+python send_asmi_protocol.py --run-id asmi-test-001 --mock-mode
 ```
 
 ## Dependency
