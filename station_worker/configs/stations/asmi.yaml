@@ -1,0 +1,22 @@
+# ASMI station worker config.
+# Lives on the ASMI Pi (10.210.29.17). From the repo root:
+#   python -m station_worker --config station_worker/configs/stations/asmi.yaml
+#
+# The gantry/deck/protocol YAMLs come in each /run-protocol request; this file
+# is only server settings + allow-list.
+
+station_id: asmi
+host: 0.0.0.0
+port: 8000
+
+run_dir: ~/picub_protocol_runs
+
+execution:
+  mock_mode: false
+
+allow:
+  instruments: [asmi]
+  commands: [home, measure, move]
+
+expected_gantry_sha256: null
+expected_deck_sha256: null
