@@ -17,23 +17,37 @@ For the sender only:
 python -m pip install requests
 ```
 
-For the station worker on the ASMI Pi:
-
-```bash
-python -m pip install flask pyyaml
-python -m pip install --upgrade --force-reinstall 'cubos[asmi] @ git+https://github.com/ursa-laboratories/CubOS.git@main'
-```
+The station worker has a bootstrap script that creates `.venv-station`,
+installs Flask, PyYAML, and CubOS, then starts the worker.
 
 ## Start The ASMI Worker
 
 Run this on the ASMI Pi from the repo root:
 
 ```bash
-python -m station_worker --config station_worker/configs/stations/asmi.yaml
+./station_worker/start_asmi_worker.sh
+```
+
+The script installs from `station_worker/requirements-server.txt`, including:
+
+```text
+cubos[asmi] @ git+https://github.com/ursa-laboratories/CubOS.git@main
+```
+
+To pass worker flags, append them after the script:
+
+```bash
+./station_worker/start_asmi_worker.sh --port 8000
 ```
 
 The worker listens on `0.0.0.0:8000`, exposes `GET /health`, and accepts
 `POST /run-protocol`. Run artifacts are written under `~/picub_protocol_runs`.
+
+If you already have an environment prepared and only want to launch the worker:
+
+```bash
+python -m station_worker --config station_worker/configs/stations/asmi.yaml
+```
 
 ## Send The Protocol
 
