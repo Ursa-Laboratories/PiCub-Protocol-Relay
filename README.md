@@ -33,7 +33,7 @@ Typical flow:
 For the controller-side sender only:
 
 ```bash
-python -m pip install requests
+python -m pip install -r requirements.txt
 ```
 
 ## Start The Station Worker
