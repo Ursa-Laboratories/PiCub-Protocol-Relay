@@ -1,17 +1,34 @@
-# PiCub Protocol Sender
+# PiCub Protocol Relay
 
-Unified ASMI protocol sender + ASMI station worker repo.
+Unified ASMI protocol relay for sending CubOS protocol bundles from a controller
+machine to a Raspberry Pi station worker.
+
+## Intended Setup
+
+Run the station worker on the Raspberry Pi attached to the ASMI gantry. From a
+controller laptop or workstation on the same local network, send the protocol
+bundle to that Pi over HTTP. The network can be the lab LAN, a direct Ethernet
+connection, or any other local network where the controller can reach the Pi's
+IP address.
+
+Typical flow:
+
+1. On the ASMI Raspberry Pi, start `station_worker`.
+2. On the controller machine, run the sender with `--asmi-base-url` pointing at
+   the Pi, for example `http://10.210.29.17:8000`.
+3. The sender posts the gantry YAML, deck YAML, and protocol YAML to the Pi.
+4. The Pi runs the protocol locally through CubOS and returns the result JSON.
 
 ## Layout
 
-- `sender/` — one-shot client that sends `protocol.yaml`, `gantry_config.yaml`,
-  and `deck_config.yaml` to a station worker.
-- `station_worker/` — Flask worker that runs on the ASMI Pi and executes the
-  received CubOS protocol bundle.
+- `sender/` — one-shot relay client that sends `protocol.yaml`,
+  `gantry_config.yaml`, and `deck_config.yaml` to a station worker.
+- `station_worker/` — Flask worker that runs on the ASMI Raspberry Pi and
+  executes the received CubOS protocol bundle.
 
 ## Install
 
-For the sender only:
+For the controller-side sender only:
 
 ```bash
 python -m pip install requests
@@ -22,7 +39,7 @@ installs Flask, PyYAML, and CubOS, then starts the worker.
 
 ## Start The ASMI Worker
 
-Run this on the ASMI Pi from the repo root:
+Run this on the ASMI Raspberry Pi from the repo root:
 
 ```bash
 ./station_worker/start_asmi_worker.sh
@@ -41,7 +58,9 @@ To pass worker flags, append them after the script:
 ```
 
 The worker listens on `0.0.0.0:8000`, exposes `GET /health`, and accepts
-`POST /run-protocol`. Run artifacts are written under `~/picub_protocol_runs`.
+`POST /run-protocol` from machines that can reach the Pi over the local network
+or direct Ethernet connection. Run artifacts are written under
+`~/picub_protocol_runs`.
 
 If you already have an environment prepared and only want to launch the worker:
 
@@ -51,11 +70,20 @@ python -m station_worker --config station_worker/configs/stations/asmi.yaml
 
 ## Send The Protocol
 
-From this repo, send the bundled ASMI protocol to the default ASMI Pi
-(`http://10.210.29.17:8000`):
+From the controller machine, send the bundled ASMI protocol to the default ASMI
+Pi (`http://10.210.29.17:8000`):
 
 ```bash
 python sender/send_asmi_protocol.py --run-id asmi-test-001
+```
+
+If the Pi has a different local-network or Ethernet IP address, pass it
+explicitly:
+
+```bash
+python sender/send_asmi_protocol.py \
+  --asmi-base-url http://<pi-ip-address>:8000 \
+  --run-id asmi-test-001
 ```
 
 If running the sender on the same Pi as the worker:
