@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Send this directory's ASMI protocol YAML directly to the station worker."""
+"""ASMI example sender built on the reusable station-worker client."""
 
 from __future__ import annotations
 
@@ -12,43 +12,33 @@ import re
 import sys
 from typing import Any
 
-import requests
-
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
 
-
-class StationRequestError(RuntimeError):
-    """The station worker request failed or returned an unsuccessful payload."""
+from station_sender import ProtocolBundle, StationClient, StationRequestError
 
 
 def main() -> int:
     args = parse_args()
-    base_url = args.asmi_base_url.rstrip("/")
-    protocol_yaml = read_text(args.protocol_yaml)
-    session = requests.Session()
+    client = StationClient(args.base_url)
+    bundle = ProtocolBundle.from_paths(
+        gantry_config=args.gantry,
+        deck_config=args.deck,
+        protocol_yaml=args.protocol,
+    )
 
     if not args.no_health_check:
-        health = get_json(session, f"{base_url}/health", timeout=args.health_timeout_s)
+        health = client.health(timeout=args.health_timeout_s)
         print(json.dumps({"health": health}, indent=2, sort_keys=True))
 
-    response = post_json(
-        session,
-        f"{base_url}/run-protocol",
-        {
-            "run_id": args.run_id,
-            "gantry_config": read_text(args.gantry_config),
-            "deck_config": read_text(args.deck_config),
-            "protocol_yaml": protocol_yaml,
-            "mock_mode": args.mock_mode,
-        },
+    response = client.run_protocol(
+        bundle,
+        run_id=args.experiment_id,
+        mock_mode=args.mock_mode,
         timeout=args.timeout_s,
     )
-    if not response.get("success", False):
-        raise StationRequestError(
-            f"ASMI station run {args.run_id!r} failed: {response.get('error') or response!r}"
-        )
     if args.output_csv:
-        write_csv(args.output_csv, response, run_id=args.run_id, wells=protocol_wells(protocol_yaml))
+        write_csv(args.output_csv, response, run_id=args.experiment_id, wells=protocol_wells(bundle.protocol_yaml))
         print(f"wrote CSV: {args.output_csv}")
     print(json.dumps(response, indent=2, sort_keys=True))
     return 0
@@ -58,11 +48,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Send local protocol.yaml unchanged to the ASMI station worker."
     )
-    parser.add_argument("--asmi-base-url", default="http://10.210.29.17:8000")
-    parser.add_argument("--run-id", default="asmi-protocol")
-    parser.add_argument("--protocol-yaml", type=Path, default=HERE / "protocol.yaml")
-    parser.add_argument("--gantry-config", type=Path, default=HERE / "gantry_config.yaml")
-    parser.add_argument("--deck-config", type=Path, default=HERE / "deck_config.yaml")
+    parser.add_argument("--base-url", default="http://10.210.29.17:8000")
+    parser.add_argument("--experiment-id", default="asmi-protocol")
+    parser.add_argument("--gantry", type=Path, default=HERE / "gantry_config.yaml")
+    parser.add_argument("--deck", type=Path, default=HERE / "deck_config.yaml")
+    parser.add_argument("--protocol", type=Path, default=HERE / "protocol.yaml")
     parser.add_argument("--timeout-s", type=float, default=900.0)
     parser.add_argument("--health-timeout-s", type=float, default=3.0)
     parser.add_argument("--output-csv", type=Path, default=HERE / "asmi_result.csv")
@@ -199,51 +189,6 @@ def flatten(value: Any, *, prefix: str = "") -> dict[str, Any]:
 
 def at(values: Any, index: int) -> Any:
     return values[index] if isinstance(values, list) and index < len(values) else None
-
-
-def read_text(path: Path) -> str:
-    return path.expanduser().resolve().read_text()
-
-
-def get_json(session: requests.Session, url: str, *, timeout: float) -> dict[str, Any]:
-    try:
-        response = session.get(url, timeout=timeout)
-    except requests.RequestException as exc:
-        raise StationRequestError(f"GET {url} failed: {exc}") from exc
-    return decode_json(response, url)
-
-
-def post_json(
-    session: requests.Session,
-    url: str,
-    payload: dict[str, Any],
-    *,
-    timeout: float,
-) -> dict[str, Any]:
-    try:
-        response = session.post(url, json=payload, timeout=timeout)
-    except requests.RequestException as exc:
-        raise StationRequestError(f"POST {url} failed: {exc}") from exc
-    return decode_json(response, url)
-
-
-def decode_json(response: requests.Response, url: str) -> dict[str, Any]:
-    if response.status_code >= 400:
-        raise StationRequestError(f"{url} -> HTTP {response.status_code}: {safe_body(response)}")
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise StationRequestError(f"{url} -> non-JSON response: {response.text[:200]!r}") from exc
-    if not isinstance(data, dict):
-        raise StationRequestError(f"{url} -> JSON response is not an object: {data!r}")
-    return data
-
-
-def safe_body(response: requests.Response) -> str:
-    try:
-        return str(response.json())
-    except ValueError:
-        return response.text[:300]
 
 
 if __name__ == "__main__":
