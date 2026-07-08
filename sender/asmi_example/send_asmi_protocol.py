@@ -38,7 +38,12 @@ def main() -> int:
         timeout=args.timeout_s,
     )
     if args.output_csv:
-        write_csv(args.output_csv, response, run_id=args.experiment_id, wells=protocol_wells(bundle.protocol_yaml))
+        write_csv(
+            args.output_csv,
+            response,
+            run_id=args.experiment_id,
+            wells=protocol_wells(bundle.protocol_yaml, bundle.deck_config),
+        )
         print(f"wrote CSV: {args.output_csv}")
     print(json.dumps(response, indent=2, sort_keys=True))
     return 0
@@ -155,10 +160,49 @@ def station_payloads(value: Any, *, preferred_keys: tuple[str, ...]) -> list[Map
     return found
 
 
-def protocol_wells(protocol_yaml: str) -> list[str]:
-    return [
+def protocol_wells(protocol_yaml: str, deck_yaml: str = "") -> list[str]:
+    explicit_wells = [
         match.group(1).upper()
         for match in re.finditer(r"\bposition:\s*plate\.([A-Ha-h][1-9][0-2]?)\b", protocol_yaml)
+    ]
+    scanned_wells: list[str] = []
+    deck_shapes = deck_plate_shapes(deck_yaml)
+    for match in re.finditer(r"\bscan:\s*(?P<body>.*?)(?=\n\s*-\s+\w+:|\Z)", protocol_yaml, re.DOTALL):
+        body = match.group("body")
+        plate_match = re.search(r"\bplate:\s*([A-Za-z_][\w.-]*)\b", body)
+        if plate_match:
+            scanned_wells.extend(plate_wells(deck_shapes.get(plate_match.group(1), (8, 12))))
+    return explicit_wells + scanned_wells
+
+
+def deck_plate_shapes(deck_yaml: str) -> dict[str, tuple[int, int]]:
+    shapes: dict[str, tuple[int, int]] = {}
+    labware_match = re.search(r"(?ms)^labware:\s*\n(?P<body>.*)", deck_yaml)
+    if not labware_match:
+        return shapes
+    for match in re.finditer(
+        r"(?ms)^  (?P<name>[A-Za-z_][\w.-]*):\s*\n(?P<body>.*?)(?=^  [A-Za-z_][\w.-]*:\s*\n|\Z)",
+        labware_match.group("body"),
+    ):
+        body = match.group("body")
+        rows = _int_yaml_field(body, "rows")
+        columns = _int_yaml_field(body, "columns")
+        if rows is not None and columns is not None:
+            shapes[match.group("name")] = (rows, columns)
+    return shapes
+
+
+def _int_yaml_field(block: str, field: str) -> int | None:
+    match = re.search(rf"(?m)^\s+{re.escape(field)}:\s*(\d+)\s*$", block)
+    return int(match.group(1)) if match else None
+
+
+def plate_wells(shape: tuple[int, int]) -> list[str]:
+    rows, columns = shape
+    return [
+        f"{chr(ord('A') + row_index)}{column}"
+        for row_index in range(rows)
+        for column in range(1, columns + 1)
     ]
 
 
