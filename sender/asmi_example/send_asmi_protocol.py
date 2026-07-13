@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ASMI example sender built on the reusable station-worker client."""
+"""ASMI example sender built on the supported CubOS appliance client."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 from collections.abc import Mapping
 import csv
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -15,12 +16,17 @@ from typing import Any
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from station_sender import ProtocolBundle, StationClient, StationRequestError
+from station_sender import (
+    ProtocolBundle,
+    StationClient,
+    StationRequestError,
+    api_token_from_sources,
+)
 
 
 def main() -> int:
     args = parse_args()
-    client = StationClient(args.base_url)
+    client = StationClient(args.base_url, api_token=api_token_from_sources(args.token_file))
     bundle = ProtocolBundle.from_paths(
         gantry_config=args.gantry,
         deck_config=args.deck,
@@ -36,6 +42,7 @@ def main() -> int:
         run_id=args.experiment_id,
         mock_mode=args.mock_mode,
         timeout=args.timeout_s,
+        poll_interval=args.poll_interval_s,
     )
     if args.output_csv:
         write_csv(
@@ -51,15 +58,18 @@ def main() -> int:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Send local protocol.yaml unchanged to the ASMI station worker."
+        description="Submit local ASMI YAML inputs to the CubOS /api/v1 run API."
     )
-    parser.add_argument("--base-url", default="http://10.210.29.17:8000")
+    parser.add_argument("--base-url", default="http://cub.local:8742")
     parser.add_argument("--experiment-id", default="asmi-protocol")
     parser.add_argument("--gantry", type=Path, default=HERE / "gantry_config.yaml")
     parser.add_argument("--deck", type=Path, default=HERE / "deck_config.yaml")
     parser.add_argument("--protocol", type=Path, default=HERE / "protocol.yaml")
     parser.add_argument("--timeout-s", type=float, default=900.0)
+    parser.add_argument("--poll-interval-s", type=float, default=0.5)
     parser.add_argument("--health-timeout-s", type=float, default=3.0)
+    token_file = os.environ.get("CUB_API_TOKEN_FILE")
+    parser.add_argument("--token-file", type=Path, default=Path(token_file) if token_file else None)
     parser.add_argument("--output-csv", type=Path, default=HERE / "asmi_result.csv")
     parser.add_argument("--mock-mode", action="store_true")
     parser.add_argument("--no-health-check", action="store_true")
