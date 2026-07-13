@@ -1,3 +1,0 @@
-flask
-pyyaml
-cubos[asmi] @ git+https://github.com/ursa-laboratories/CubOS.git@main
